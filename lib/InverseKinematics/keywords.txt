@@ -1,0 +1,21 @@
+#Data types
+InverseKinematics	KEYWORD1
+Machine	KEYWORD1
+
+#Methods and Functions
+ThetaA	KEYWORD2
+ThetaB	KEYWORD2
+ThetaC	KEYWORD2
+
+#Constants
+A	KEYWORD3
+B	KEYWORD3
+C	KEYWORD3
+
+
+
+
+
+
+
+
