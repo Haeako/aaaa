@@ -1,24 +1,34 @@
 # uses the preview stream for more flexible resolutions on oak
 import cv2
+import os
 import depthai as dai
 import pyvirtualcam
 from pyvirtualcam import PixelFormat
-from sending import send_position, get_position
-# import ultralytics
-# from ultralytics import YOLO
 import numpy as np
-# import random as rng
-# import matplotlib as plt
-# Create pipeline
+import time
+
+FIFO_PATH = '/tmp/stepper_fifo'
+try:
+    if not os.path.exists(FIFO_PATH):
+        os.mkfifo(FIFO_PATH, 0o666)
+except OSError as e:
+    if e.errno != errno.EEXIST:
+        print(f"Failed to create FIFO: {e}")
+fd = os.open(FIFO_PATH, os.O_WRONLY)
+
+def write_to_fifo(message):
+    try:
+        # Open FIFO in non-blocking mode for writing
+        os.write(fd, message.encode())
+    except OSError as e:
+        if e.errno == errno.ENXIO:
+            # No reader available
+            pass
+        else:
+            print(f"Error writing to FIFO: {e}")
+
 
 pipeline = dai.Pipeline()
-import serial
-
-# rng.seed(12345)
-def send_data(comport, baudrate, data):
-    ser = serial.Serial(comport, baudrate)
-    ser.write(data.encode())  # Send data as bytes
-    ser.close()
 
 # Define source and output
 camRgb = pipeline.createCamera()
@@ -27,8 +37,8 @@ xoutVideo = pipeline.createXLinkOut()
 xoutVideo.setStreamName("video")
 
 # settings
-width = 1024
-height = 836
+width = 512
+height = 418
 fps = 60
 
 # preview output using opencv imshow
@@ -54,22 +64,19 @@ with dai.Device(pipeline) as device:
     video = device.getOutputQueue(name="video", maxSize=1, blocking=False)
     
     with pyvirtualcam.Camera(width, height, fps, print_fps=True) as cam:
-        # print(f'Virtual cam started: {cam.device} ({cam.width}x{cam.height} @ {cam.fps}fps)')
+        print(f'Virtual cam started: {cam.device} ({cam.width}x{cam.height} @ {cam.fps}fps)')
 
         while True:
+            previous_catch = time.time()
             videoIn = video.get()
             # Get BGR frame from NV12 encoded video frame to show with opencv
             frame = videoIn.getCvFrame()
-            frame_gray =cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
-            canny_output = cv2.Canny(frame_gray, 0.3, 0.6)   
             frame_hsv = cv2.cvtColor(frame,cv2.COLOR_BGR2HSV); 
             frame_hsv = cv2.inRange(frame,np.array([30,120,50]),np.array([87,255,255]))
-            #cv2.imshow("end",frame_hsv)
-            #cv2.waitKey(1)
             contours, hierarchy = cv2.findContours(frame_hsv, cv2.RETR_CCOMP,cv2.CHAIN_APPROX_SIMPLE)
             mu=[None]*len(contours)
             for i in range(len(contours)):
-                mu[i]=cv2.moments(contours[i])
+               mu[i]=cv2.moments(contours[i])
             mc=[None]*len(contours)
             index=0
             for i in range(len(contours)):
@@ -78,26 +85,24 @@ with dai.Device(pipeline) as device:
                     index=i
                     mc[i] = (mu[i]['m10'] / (mu[i]['m00'] + 1e-5), mu[i]['m01'] / (mu[i]['m00'] + 1e-5))
                     break
-            frame = cv2.rectangle(frame, (498,404), (526,430), (0, 0, 255), 2)
-            # frame = cv2.rectangle(frame, (200,100), (812,800), (0, 0, 255), 2)
-            # Draw contours
-            # print (index)
+            xx0 = int(498/2)
+            yy0 = int(404/2)
+            xx1 = int(526/2)
+            yy1 = int(430/2)
+            frame = cv2.rectangle(frame, (xx0,yy0), (xx1,yy1), (0, 0, 255), 2)
+            cv2.imshow("output", frame)
+            cv2.waitKey(1)
+            
             if index <= len(mc) and index!= 0:
                 center = int(mc[index][0]),int(mc[index][1])
-                send_position(' '.join(map(str,center)))
-                print(' '.join(map(str,center)))
-
-                frame=cv2.circle(frame,(center),4,(255,0,0),-1)
-
-                cv2.imshow("end",frame)
-                cv2.waitKey(1)
-                #coordinate = get_position()
-                #print(coordinate)
+                #frame=cv2.circle(frame,(center),4,(255,0,0),-1)
+                catch = time.time()
+                write_to_fifo((' '.join(map(str,center))))
+                
+                print(catch - previous_catch)
+                previous_catch = catch
             else:
-                send_position(' '.join (map(str,(0,0))))
-                # print(' '.join (map(str,(0,0))))
-                cv2.imshow("end",frame)
-                cv2.waitKey(1)
-                #oordinate = get_position()
-                #print(coordinate)
+                
+                pos = ' '.join (map(str,(0,0)))
+                write_to_fifo(pos)
                 
