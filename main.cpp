@@ -2,13 +2,46 @@
 //--------------------------------------------------------------
 
 //libraries
-#include <AccelStepper.h>
-#include <InverseKinematics.h>
-#include <MultiStepper.h>
-#include <stdint.h>
-#include <math.h>
-#include <point.h>
-#include <Setup.h>
+#include <pigpio.h>
+#include "AccelStepper.h"
+#include "InverseKinematics.h"
+#include "MultiStepper.h"
+#include <wiringPi.h>
+
+#include <cmath>
+#include <iostream>
+#include <unistd.h>
+#include "comunicate.h"
+
+using namespace std;
+// Steeper constant
+#define MAX_SPEED 1200
+#define STEP_RANGE 2000 // Step range
+#define Timeout_value 10
+template <typename T>
+T constrain(T x, T a, T b) {
+    if (x < a) return a;
+    if (x > b) return b;
+    return x;
+}
+FifoServer reader;
+
+#define DIR_PIN1    22  // GPIO 27
+#define STEP_PIN1    27  // GPIO 22
+// Stepper 2
+#define DIR_PIN2    24  // GPIO 23
+#define STEP_PIN2    23  // GPIO 24
+// Stepper 3
+#define DIR_PIN3   5   // GPIO 5
+#define STEP_PIN3   6   // GPIO 6
+
+// Create an AccelStepper object for each stepper motor
+AccelStepper stepperA(AccelStepper::DRIVER, STEP_PIN1, DIR_PIN1);
+AccelStepper stepperB(AccelStepper::DRIVER, STEP_PIN2, DIR_PIN2);
+AccelStepper stepperC(AccelStepper::DRIVER, STEP_PIN3, DIR_PIN3);
+
+// Create a MultiStepper instance to control all stepper motors
+MultiStepper steppers;
 
 Machine machine(2, 3.125, 1.75, 3.669291339);     //(d, e, f, g) object to define the lengths of the machine
 
@@ -27,8 +60,8 @@ double angToStep = STEP_RANGE / 360;  // Angle to step conversion factor (steps 
 bool detected = 0;              // This value is 1 when the ball is detected and the value is 0 when the ball in not detected
 
 double  // Offset
-        Xoffset = 512,  // X offset for the center position of the platform
-        Yoffset = 418;  // Y offset for the center position of the platform
+        Xoffset = 256,  // X offset for the center position of the platform
+        Yoffset = 208.5;  // Y offset for the center position of the platform
 //takes in an X and Y setpoint/position and moves the ball to that position
 double setpointX = 0, // target X's potision 
        setpointY = 0; // target Y's potision 
@@ -44,30 +77,15 @@ double  //PID constants
         alpha = 7E-4,
         beta = 2;
 
-AccelStepper stepperA(AccelStepper::DRIVER, STP1, DIR1);
-AccelStepper stepperB(AccelStepper::DRIVER, STP2, DIR2);
-AccelStepper stepperC(AccelStepper::DRIVER, STP3, DIR3);
+
+// Point
+struct Point
+{
+  int x; 
+  int y;
+};
 
 
-MultiStepper steppers; 
-void setup() {
-  Serial.begin(Baud_rate);
-  Serial.setTimeout(Timeout_value);
-  // Adding the steppers to the steppersControl instance for multi stepper control
-  steppers.addStepper(stepperA);
-  steppers.addStepper(stepperB);
-  steppers.addStepper(stepperC);
-  //Enable pin
-  pinMode(ENA, OUTPUT);           //  Define enable pin as output
-  digitalWrite(ENA, HIGH);        //  Sets the drivers off initially
-  delay(1000);                    //  Small delay to allow the user to reset the platform
-  digitalWrite(ENA, LOW);         //  Sets the drivers on
-  moveTo(4.25, 0, 0);             //  Moves the platform to the home position
-  steppers.runSpeedToPosition();  //  Blocks until the platform is at the home position
-}
-void loop() {
-  PID(setpointX, setpointY);  // (X setpoint, Y setpoint) -- must be looped
-}
 // Moves positions the platform with the given parameters
 void moveTo(double hz, double nx, double ny) {
   //if the ball has been detected
@@ -110,7 +128,8 @@ void moveTo(double hz, double nx, double ny) {
 
 void PID(double setpointX, double setpointY) {
   Point p;
-  getPoint(p);  //measure X and Y positions
+  reader.run(p.x, p.y); 
+  cerr << "actual " <<p.x << " " <<p.y << endl; //measure X and Y positions
   //p.y = abs(p.y - 1024);
   //if the ball is detected (the x position will not be 0)
   if (p.x != 0) {
@@ -121,7 +140,7 @@ void PID(double setpointX, double setpointY) {
       errorPrev[i] = error[i];                                                                     //sets previous error
       error[i] = (i == 0) * (Xoffset - p.x - setpointX) + (i == 1) * (Yoffset - p.y - setpointY);  //sets error aka X or Y ball position
       integr[i] += error[i] + errorPrev[i];
-      integr[i] = constrain(integr[i], -2500,2500);                                                       //calculates the integral of the error (proportional but not equal to the true integral of the error)
+      integr[i] = constrain(integr[i], -2500.0,2500.0);                                                       //calculates the integral of the error (proportional but not equal to the true integral of the error)
       
       deriv[i] = error[i] - errorPrev[i];                                                          //calcuates the derivative of the error (proportional but not equal to the true derivative of the error)
       deriv[i] = isnan(deriv[i]) || isinf(deriv[i]) ? 0 : deriv[i];                                //checks if the derivative is a real number or infinite
@@ -135,17 +154,17 @@ void PID(double setpointX, double setpointY) {
       speed[i] = (i == A) * stepperA.currentPosition() + (i == B) * stepperB.currentPosition() + (i == C) * stepperC.currentPosition();  //sets current position
       speed[i] = abs(speed[i] - pos[i]) * ks;                                                                                            //calculates the error in the current position and target position
       speed[i] = constrain(speed[i], speedPrev[i] - 200, speedPrev[i] + 200);                                                            //filters speed by preventing it from beign over 100 away from last speed
-      speed[i] = constrain(speed[i], 0, 1000);    //suusy baka                                                                                        //constrains sped from 0 to 1000
+      speed[i] = constrain(speed[i], 0.0, 1000.0);                                                                                            //constrains sped from 0 to 1000
     }
-    //Serial.println((String) p.x + " - " + p.y + "-"+ "X OUT = " + out[0] + "   Y OUT = " + out[1] + "   Speed A: " + speed[A]+"   Speed B: " + speed[B]+"   Speed C: " + speed[C]);  //print X and Y outputs
-    //Serial.flush();
+    //cout << p.x << " - " << p.y << "-"<< "X OUT = " << out[0] << "   Y OUT = " << out[1] << "   Speed A: " << speed[A]<<"   Speed B: " << speed[B]<<"   Speed C: " << speed[C] << endl;  //print X and Y outputs
   }
   //if the ball is not detected (the x value will be 0)
   else{
     //double check that there is no ball
     //10 mllis delay before another reading
     delay(Timeout_value);
-    getPoint(p);
+    reader.run(p.x, p.y);
+    //cout << p.x <<  p.y << endl;
       //measure X and Y positions again to confirm no ball
      //measure X and Y positions again to confirm no ball    
     if (p.x == 0)
@@ -153,15 +172,34 @@ void PID(double setpointX, double setpointY) {
       //if the ball is still not detected
       //Serial.println("BALL NOT DETECTED");
       // delay(1000);
+      moveTo(4.25, 0, 0);   
       detected = 0;
     }
   }
   //continues moving platforma and waits until 20 millis has elapsed
-  timeI = millis();
-  while (millis() - timeI < 20) {
-    //display();
+unsigned long timeI = millis();
+while (millis() - timeI < 20) {
     moveTo(4.25, -out[0], -out[1]);  //moves the platfrom
   }
+}
+
+void setup() {
+  // Start camera
+
+  //cout << "Camera Started" << endl << "Adding Steppers..." << endl;
+  // Adding the steppers to the steppersControl instance for multi stepper control
+  steppers.addStepper(stepperA);
+  steppers.addStepper(stepperB);
+  steppers.addStepper(stepperC);
+  //start brige connection
+  moveTo(4.25, 0, 0);             //  Moves the platform to the home position
+  steppers.runSpeedToPosition();  //  Blocks until the platform is at the home position
+}
+int main() {
+  setup();
+  while(true){
+  PID(setpointX, setpointY);
+  }  // (X setpoint, Y setpoint) -- must be looped
 }
 
   

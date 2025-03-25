@@ -1,5 +1,6 @@
 #include "InverseKinematics.h"
-
+#include <math.h>
+#define PI 3.14159
 //Global User Defined Constants
 double d;  //distance from the center of the base to any of its corners
 double e;  //distance from the center of the platform to any of its corners

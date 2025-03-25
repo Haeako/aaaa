@@ -1,6 +1,5 @@
 #ifndef InverseKinematics_H
 #define InverseKinematics_H
-#include "arduino.h"
 
 //constants
 #define A 0
