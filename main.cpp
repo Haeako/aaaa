@@ -1,4 +1,5 @@
 //***3RPS Parallel Manipulator Ball Balancer Code BY Aaed Musa**
+// modified by NhannvtNhannvt
 //--------------------------------------------------------------
 
 //libraries
@@ -9,14 +10,12 @@
 #include <wiringPi.h>
 
 #include <cmath>
-#include <iostream>
 #include <unistd.h>
 #include "comunicate.h"
 
 using namespace std;
 // Steeper constant
-#define MAX_SPEED 1200
-#define STEP_RANGE 2000 // Step range
+
 #define Timeout_value 10
 template <typename T>
 T constrain(T x, T a, T b) {
@@ -26,6 +25,24 @@ T constrain(T x, T a, T b) {
 }
 FifoServer reader;
 
+// =============== ARS Configuration ===============
+const int optimize_interval = 150;  // Số chu kỳ PID giữa các lần tối ưu
+int optimize_counter = 0;
+
+enum ARSState { USING_ORIGINAL, USING_PERTURBED };
+ARSState ars_state = USING_ORIGINAL;
+
+double original_kp, original_ki, original_kd;
+double accumulated_error_original = 0.0;
+double accumulated_error_perturbed = 0.0;
+
+ARS ars(0.005,    // step_size
+        0.003,    // explore_noise 
+        5,         // top_percent
+        20,        // sample_size
+        &kp, &ki, &kd); //  PID pointer
+
+//        =============== Robot Configuration ===============
 #define DIR_PIN1    22  // GPIO 27
 #define STEP_PIN1    27  // GPIO 22
 // Stepper 2
@@ -34,6 +51,9 @@ FifoServer reader;
 // Stepper 3
 #define DIR_PIN3   5   // GPIO 5
 #define STEP_PIN3   6   // GPIO 6
+
+#define MAX_SPEED 1200
+#define STEP_RANGE 2000 // Step range
 
 // Create an AccelStepper object for each stepper motor
 AccelStepper stepperA(AccelStepper::DRIVER, STEP_PIN1, DIR_PIN1);
@@ -60,8 +80,8 @@ double angToStep = STEP_RANGE / 360;  // Angle to step conversion factor (steps 
 bool detected = 0;              // This value is 1 when the ball is detected and the value is 0 when the ball in not detected
 
 double  // Offset
-        Xoffset = 256,  // X offset for the center position of the platform
-        Yoffset = 208.5;  // Y offset for the center position of the platform
+        Xoffset = 512,  // X offset for the center position of the platform
+        Yoffset = 417;  // Y offset for the center position of the platform
 //takes in an X and Y setpoint/position and moves the ball to that position
 double setpointX = 0, // target X's potision 
        setpointY = 0; // target Y's potision 
@@ -77,14 +97,12 @@ double  //PID constants
         alpha = 7E-4,
         beta = 2;
 
-
 // Point
 struct Point
 {
   int x; 
   int y;
 };
-
 
 // Moves positions the platform with the given parameters
 void moveTo(double hz, double nx, double ny) {
@@ -134,7 +152,14 @@ void PID(double setpointX, double setpointY) {
   //if the ball is detected (the x position will not be 0)
   if (p.x != 0) {
     detected = 1;
-
+    //error update
+    double instant_error = error[0]*error[0] + error[1]*error[1];
+        
+    if (ars_state == USING_ORIGINAL) {
+        accumulated_error_original += instant_error;
+    } else {
+        accumulated_error_perturbed += instant_error;
+    }
     //calculates PID values
     for (int i = 0; i < 2; i++) {
       errorPrev[i] = error[i];                                                                     //sets previous error
@@ -175,6 +200,38 @@ void PID(double setpointX, double setpointY) {
       moveTo(4.25, 0, 0);   
       detected = 0;
     }
+
+    if (++optimize_counter >= optimize_interval) {
+      optimize_counter = 0;
+      
+      if (ars_state == USING_ORIGINAL) {
+          // Lưu tham số gốc và tạo nhiễu
+          original_kp = kp;
+          original_ki = ki;
+          original_kd = kd;
+          ars.perturb_parameters();
+          ars_state = USING_PERTURBED;
+      } else {
+          // Tính toán hiệu suất
+          float perf_original = 1.0 / (1.0 + accumulated_error_original);
+          float perf_perturbed = 1.0 / (1.0 + accumulated_error_perturbed);
+          
+          // Cập nhật tham số tốt hơn
+          if (perf_perturbed > perf_original) {
+              original_kp = kp;
+              original_ki = ki;
+              original_kd = kd;
+          } else {
+              ars.reset_parameters(original_kp, original_ki, original_kd);
+          }
+          
+          // Đặt lại bộ đếm
+          accumulated_error_original = 0.0;
+          accumulated_error_perturbed = 0.0;
+          ars_state = USING_ORIGINAL;
+      }
+  }
+
   }
   //continues moving platforma and waits until 20 millis has elapsed
 unsigned long timeI = millis();

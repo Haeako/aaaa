@@ -1,3 +1,0 @@
-
-
-Point getPoint(Point &buffer);

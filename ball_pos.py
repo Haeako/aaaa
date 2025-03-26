@@ -94,7 +94,7 @@ with dai.Device(pipeline) as device:
             cv2.waitKey(1)
             
             if index <= len(mc) and index!= 0:
-                center = int(mc[index][0]),int(mc[index][1])
+                center = int(mc[index][0] * 2),int(mc[index][1] * 2)
                 #frame=cv2.circle(frame,(center),4,(255,0,0),-1)
                 catch = time.time()
                 write_to_fifo((' '.join(map(str,center))))
