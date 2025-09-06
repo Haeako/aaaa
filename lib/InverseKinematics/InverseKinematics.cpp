@@ -1,3 +1,4 @@
+//***3RPS Parallel Manipulator Ball Balancer Code BY Aaed Musa**
 #include "InverseKinematics.h"
 #include <math.h>
 #define PI 3.14159

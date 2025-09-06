@@ -1,3 +1,15 @@
+/*
+ * AccelStepper-RPI: Raspberry Pi Port
+ * 
+ * Original AccelStepper library by Mike McCauley
+ * Raspberry Pi port by [] 2025
+ * 
+ * Key modifications for Raspberry Pi:
+ * - Replaced Arduino-specific functions with pigpio
+ * 
+ * This is a derivative work licensed under GPL V2
+ */
+//!====================================== BEGIN ORIGINAL WORK=========================================
 // AccelStepper.h
 //
 /// \mainpage AccelStepper library for Arduino
@@ -206,11 +218,12 @@
 
 #ifndef AccelStepper_h
 #define AccelStepper_h
-
+//!========== BEGIN MODIFIED =========================================
 #include <stdlib.h>
-#include <pigpio.h>
+#ifdef __arm__
+    #include <pigpio.h>
 #endif
-
+//!========== END MODIFIED =========================================
 
 /////////////////////////////////////////////////////////////////////
 /// \class AccelStepper AccelStepper.h <AccelStepper.h>
@@ -666,3 +679,5 @@ private:
 /// Shows how to use AccelStepper to control 2 x 2 phase steppers using the 
 /// Itead Studio Arduino Dual Stepper Motor Driver Shield
 /// model IM120417015
+#endif
+//!====================================== END ORIGINAL WORK=========================================

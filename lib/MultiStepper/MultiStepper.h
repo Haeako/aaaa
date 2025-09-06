@@ -1,9 +1,14 @@
 // MultiStepper.h
+// Copyright (C) 2015 Mike McCauley
+// $Id:  $
 
 #ifndef MultiStepper_h
 #define MultiStepper_h
 #include <stdlib.h>
-#include <pigpio.h>
+#include <stdint.h>
+#ifdef __arm__
+    #include <pigpio.h>
+#endif
 
 
 #define MULTISTEPPER_MAX_STEPPERS 10

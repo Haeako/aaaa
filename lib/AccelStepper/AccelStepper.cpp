@@ -40,8 +40,6 @@ void AccelStepper::move(long relative)
 }
 
 // Implements steps according to the current step interval
-// You must call this at least once per step
-// returns true if a step occurred
 bool AccelStepper::runSpeed()
 {
     // Dont do anything unless we actually have a step interval

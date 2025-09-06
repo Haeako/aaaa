@@ -1,3 +1,4 @@
+//***3RPS Parallel Manipulator Ball Balancer Code BY Aaed Musa**
 #ifndef InverseKinematics_H
 #define InverseKinematics_H
 
